@@ -4,165 +4,290 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32 Load Balancer Dashboard</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-        }
-    </script>
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Socket.IO -->
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <title>Flashpoint · Global Traffic Operations</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
+    <link rel="stylesheet" href="/static/flashpoint.css">
+    <!-- Vendored so the demo still works without venue Wi-Fi -->
+    <script src="/static/vendor/chart.umd.min.js"></script>
+    <script src="/static/vendor/socket.io.min.js"></script>
+    <script src="/static/vendor/d3.min.js"></script>
+    <script src="/static/vendor/topojson-client.min.js"></script>
 </head>
 
-<body
-    class="bg-gray-100 dark:bg-gray-900 transition-colors duration-200 min-h-screen text-gray-800 dark:text-gray-100 font-sans p-6">
-    <div class="max-w-7xl mx-auto space-y-6">
+<body data-laptop-ip="{{ laptop_ip }}">
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <!-- Lucide icon paths (ISC licence) -->
+        <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+        <symbol id="i-store" viewBox="0 0 24 24"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"/></symbol>
+        <symbol id="i-flask" viewBox="0 0 24 24"><path d="M10 2v7.31"/><path d="M14 9.3V1.99"/><path d="M8.5 2h7"/><path d="M14 9.3a6.5 6.5 0 1 1-4 0"/><path d="M5.52 16h12.96"/></symbol>
+        <symbol id="i-cpu" viewBox="0 0 24 24"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></symbol>
+        <symbol id="i-server" viewBox="0 0 24 24"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/></symbol>
+        <symbol id="i-pause" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></symbol>
+        <symbol id="i-play" viewBox="0 0 24 24"><path d="m6 3 14 9-14 9z"/></symbol>
+        <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
+        <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></symbol>
+        <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+        <symbol id="i-bag" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></symbol>
+        <symbol id="i-user" viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+    </svg>
 
-        <header class="flex items-center justify-between">
-            <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Load Balancer Control Center</h1>
-            <div class="flex space-x-4 items-center">
-                <button id="theme-toggle" class="p-2 bg-gray-200 dark:bg-gray-700 rounded-full focus:outline-none">
-                    <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5 text-gray-800 dark:text-gray-200"
-                        fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
-                    </svg>
-                    <svg id="theme-toggle-light-icon" class="hidden w-5 h-5 text-gray-800 dark:text-gray-200"
-                        fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                        <path
-                            d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z"
-                            fill-rule="evenodd" clip-rule="evenodd"></path>
-                    </svg>
+    <header class="nav">
+        <a class="brand" href="#live" aria-label="Flashpoint, live traffic">
+            <svg class="brand-mark" viewBox="0 0 22 22" aria-hidden="true">
+                <rect x="0.5" y="0.5" width="21" height="21" rx="5" fill="#17212B" stroke="#263341" />
+                <path d="M5 11h4l2-5 2 10 2-5h2" fill="none" stroke="#4C9AFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span class="brand-name">FLASHPOINT</span>
+            <span class="brand-sub">Global Traffic Operations</span>
+        </a>
+        <nav class="tabs" aria-label="Sections">
+            <a class="tab" href="#live" data-view-link="live"><svg class="icon"><use href="#i-activity" /></svg>Live traffic</a>
+            <a class="tab" href="#sale" data-view-link="sale"><svg class="icon"><use href="#i-store" /></svg>Flash sale</a>
+            <a class="tab" href="/scenarios"><svg class="icon"><use href="#i-flask" /></svg>Algorithm analysis</a>
+        </nav>
+        <div class="nav-status">
+            <span class="status" id="nav-socket" title="Socket.IO connection between this page and Flask"><span class="status-label">Dashboard </span>connecting</span>
+            <span class="status" id="nav-esp32" title="The ESP32 has no status endpoint. This reflects forwarding observed at the backends."><span class="status-label">ESP32 </span>unverified</span>
+        </div>
+    </header>
+
+    <!-- ============================ LIVE TRAFFIC ============================ -->
+    <main class="view-live" id="view-live" data-view="live">
+        <section class="metrics" aria-label="Traffic metrics">
+            <div class="metric" data-metric="sent">
+                <span class="metric-label">Requests sent</span>
+                <span class="metric-value" data-value>0</span>
+                <canvas class="metric-spark" data-spark></canvas>
+                <span class="metric-sub" data-sub>By generators, this session</span>
+            </div>
+            <div class="metric" data-metric="rate">
+                <span class="metric-label">Request rate</span>
+                <span class="metric-value" data-value>0</span>
+                <canvas class="metric-spark" data-spark></canvas>
+                <span class="metric-sub" data-sub>req/s, 10 s average</span>
+            </div>
+            <div class="metric" data-metric="latency">
+                <span class="metric-label">Average response time</span>
+                <span class="metric-value" data-value>Not measured</span>
+                <canvas class="metric-spark" data-spark></canvas>
+                <span class="metric-sub" data-sub>Client-observed, HTTP 200, last 60 s</span>
+            </div>
+            <div class="metric" data-metric="ok">
+                <span class="metric-label">HTTP 200 responses</span>
+                <span class="metric-value" data-value>0</span>
+                <canvas class="metric-spark" data-spark></canvas>
+                <span class="metric-sub" data-sub>Awaiting traffic</span>
+            </div>
+            <div class="metric" data-metric="failed">
+                <span class="metric-label">Not served</span>
+                <span class="metric-value" data-value>0</span>
+                <canvas class="metric-spark" data-spark></canvas>
+                <span class="metric-sub" data-sub>Timeouts, errors and non-200 responses</span>
+            </div>
+            <div class="metric" data-metric="generators">
+                <span class="metric-label">Active generators</span>
+                <span class="metric-value" data-value>0</span>
+                <canvas class="metric-spark" data-spark></canvas>
+                <span class="metric-sub" data-sub>Of 7, one per region</span>
+            </div>
+            <div class="metrics-actions">
+                <button class="btn btn--ghost btn--sm" type="button" id="reset-counters" title="Clears counters and charts in this browser. Does not affect generators or servers.">
+                    <svg class="icon"><use href="#i-rotate" /></svg>Reset counters
                 </button>
-                <div
-                    class="bg-gray-200 dark:bg-gray-800 px-3 py-1 rounded text-sm font-mono text-gray-700 dark:text-gray-300 shadow-inner">
-                    Your Laptop IP: <span class="font-bold text-blue-700 dark:text-blue-400">{{ laptop_ip }}</span>
-                </div>
-                <span id="socket-status"
-                    class="px-3 py-1 bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 rounded-full text-sm font-medium">Disconnected</span>
             </div>
-        </header>
+        </section>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-            <!-- Left Column: Settings -->
-            <div class="col-span-1 space-y-6">
-                <!-- Server Management -->
-                <div
-                    class="bg-white dark:bg-gray-800 p-5 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-                    <h2 class="text-xl font-bold mb-4 dark:text-white">Servers</h2>
-
-                    <form id="form-create-server" class="flex gap-2 mb-4">
-                        <input type="number" id="srv-port" placeholder="Port (e.g. 8080)"
-                            class="flex-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2 text-sm"
-                            required>
-                        <input type="number" id="srv-latency" placeholder="Latency %" min="0" max="100" value="0"
-                            class="flex-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2 text-sm"
-                            required>
-                        <button type="submit"
-                            class="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700">Add
-                            Server</button>
-                    </form>
-
-                    <div class="space-y-3" id="server-list">
-                        <!-- Server cards injected here -->
-                    </div>
+        <section class="stage" id="stage" aria-label="Traffic map and routing">
+            <div class="map-pane" data-map-pane>
+                <div class="map-toolbar">
+                    <p class="map-note">Regions are simulated: each marks one request generator running on this laptop. The gateway's place in the diagram is illustrative.</p>
                 </div>
-
-                <!-- Client Management -->
-                <div
-                    class="bg-white dark:bg-gray-800 p-5 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-                    <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-xl font-bold dark:text-white">Mock Clients</h2>
-                        <button onclick="cmdKillAllClients()"
-                            class="bg-red-600 text-white px-3 py-1 rounded text-sm font-medium hover:bg-red-700">Kill
-                            All</button>
-                    </div>
-
-                    <form id="form-create-client" class="mb-4">
-                        <div class="flex gap-2 mb-2">
-                            <input type="text" id="cli-ip" placeholder="ESP32 IP" value="192.168.1.100"
-                                class="flex-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2 text-sm"
-                                required>
-                            <input type="number" id="cli-port" placeholder="Port" value="80"
-                                class="w-24 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2 text-sm"
-                                required>
-                        </div>
-                        <div class="flex gap-2 mb-2">
-                            <input type="number" step="0.1" id="cli-delay" placeholder="Delay (sec)" value="1.0"
-                                class="flex-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2 text-sm"
-                                required>
-                            <input type="number" step="0.1" id="cli-timeout" placeholder="Timeout (sec)" value="2.0"
-                                class="flex-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2 text-sm"
-                                required>
-                        </div>
-                        <button type="submit"
-                            class="bg-green-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-green-700 w-full">Spawn
-                            Client</button>
-                    </form>
-
-                    <div class="space-y-3" id="client-list">
-                        <!-- Client cards injected here -->
-                    </div>
+                <div class="map-controls">
+                    <span class="focus-chip" id="focus-chip" hidden>
+                        <span id="focus-name"></span>
+                        <button class="btn btn--ghost btn--icon btn--sm" type="button" id="focus-clear" aria-label="Clear region focus"><svg class="icon"><use href="#i-x" /></svg></button>
+                    </span>
+                    <button class="btn btn--sm" type="button" id="toggle-anim" aria-pressed="false" title="Stops request animations only. Traffic and counters keep running.">
+                        <svg class="icon"><use href="#i-pause" /></svg><span>Pause animations</span>
+                    </button>
                 </div>
+                <svg class="geo" data-geo role="img" aria-label="World map with seven simulated client regions"></svg>
+                <div class="map-labels" data-labels></div>
+                <div class="map-tooltip" data-tooltip hidden></div>
+                <div class="legend" data-legend role="group" aria-label="Focus a region"></div>
             </div>
 
-            <!-- Right Column: Visualization & Logs -->
-            <div class="col-span-1 lg:col-span-2 space-y-6">
-                <!-- Telemetry Graph -->
-                <div
-                    class="bg-white dark:bg-gray-800 p-5 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-                    <div class="flex items-center justify-between mb-4">
-                        <h2 class="text-xl font-bold dark:text-white">Traffic Visualization</h2>
-                        <div class="flex items-center space-x-2">
-                            <label for="chart-refresh" class="text-sm dark:text-gray-300">Refresh (ms):</label>
-                            <input type="number" id="chart-refresh" value="250"
-                                class="w-24 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-2 py-1 text-sm">
-                        </div>
+            <aside class="routing" id="routing" aria-label="Gateway and backends">
+                <section class="panel-section gateway" data-gateway>
+                    <span class="anchor-in" data-anchor="gateway-in"></span>
+                    <div class="panel-head">
+                        <h2 class="panel-title"><svg class="icon gw-chip"><use href="#i-cpu" /></svg>ESP32 gateway</h2>
+                        <span class="status" id="gw-status">Unverified</span>
                     </div>
+                    <dl class="kv">
+                        <div><dt>Generators target</dt><dd id="gw-target"><span class="muted">No generators running</span></dd></div>
+                        <div><dt>Listens on</dt><dd><span class="mono">:80</span> <span class="muted">per firmware</span></dd></div>
+                        <div><dt>Session slots</dt><dd><div class="slots" id="gw-slots"></div><span id="gw-slots-text" class="muted">0 of 7 open from this dashboard</span></dd></div>
+                        <div><dt>Strategy</dt><dd>
+                            <select class="select" id="gw-strategy" title="The firmware picks its strategy over the serial monitor at boot and never reports it. This label is yours to set." style="width:100%">
+                                <option value="">Not reported by firmware</option>
+                                <option value="round_robin">Operator note: Round Robin</option>
+                                <option value="q_learning">Operator note: Q-Learning</option>
+                                <option value="ema">Operator note: EMA Response Time</option>
+                            </select>
+                        </dd></div>
+                    </dl>
+                    <span class="anchor-out" data-anchor="gateway-out"></span>
+                </section>
 
-                    <h3 class="text-md font-semibold mb-2 text-gray-700 dark:text-gray-300">Total Period Requests</h3>
-                    <div class="relative h-48 w-full mb-6">
-                        <canvas id="totalPeriodChart"></canvas>
+                <section class="panel-section">
+                    <div class="panel-head">
+                        <h2 class="panel-title"><svg class="icon"><use href="#i-server" /></svg>Backends</h2>
+                        <span class="panel-meta num" id="be-total">0 requests received</span>
                     </div>
+                    <div class="backends" id="backends"></div>
+                </section>
 
-                    <h3 class="text-md font-semibold mb-2 text-gray-700 dark:text-gray-300">Server Requests in Period
-                    </h3>
-                    <div class="relative h-48 w-full mb-4">
-                        <canvas id="trafficChart"></canvas>
-                    </div>
+                <section class="panel-section">
+                    <form class="add-backend" id="add-backend">
+                        <label class="field"><span>Port</span><input class="input mono" type="number" id="new-port" min="1" max="65535" required></label>
+                        <label class="field"><span>Added latency</span><input class="input" type="number" id="new-latency" min="0" max="100" value="0" required></label>
+                        <button class="btn" type="submit">Add backend</button>
+                    </form>
+                    <p class="gw-note">The firmware forwards to ports 8080 to 8084. Latency is a share of the 2 s timeout: 25 adds 500 ms to every request.</p>
+                </section>
+            </aside>
 
-                    <div class="p-2 bg-gray-50 dark:bg-gray-700 rounded mb-4 flex justify-between items-center">
-                        <div class="font-semibold text-gray-500 dark:text-gray-400 text-sm">Total Requests (All Time)
-                        </div>
-                        <div id="stat-total-reqs" class="text-xl font-bold text-blue-600 dark:text-blue-400">0</div>
-                    </div>
+            <svg class="route-layer" data-routes aria-hidden="true"></svg>
+            <canvas class="pulse-layer" data-pulses aria-hidden="true"></canvas>
+        </section>
 
-                    <h3 class="text-md font-semibold mb-2 text-gray-700 dark:text-gray-300">Average Response Time (ms)
-                    </h3>
-                    <div class="relative h-48 w-full mb-4">
-                        <canvas id="avgResponseTimeChart"></canvas>
-                    </div>
+        <section class="lower">
+            <div class="chart-cell">
+                <div class="cell-head"><h2 class="cell-title">Throughput</h2><span class="cell-unit">req/s, 1 s buckets</span></div>
+                <div class="chart-box"><canvas id="chart-throughput"></canvas><div class="chart-empty" data-empty="throughput"></div></div>
+            </div>
+            <div class="chart-cell">
+                <div class="cell-head"><h2 class="cell-title">Backend distribution</h2><span class="cell-unit">req/s by port</span></div>
+                <div class="chart-box"><canvas id="chart-distribution"></canvas><div class="chart-empty" data-empty="distribution"></div></div>
+            </div>
+            <div class="chart-cell">
+                <div class="cell-head"><h2 class="cell-title">Response time</h2><span class="cell-unit">ms, client-observed</span></div>
+                <div class="chart-box"><canvas id="chart-latency"></canvas><div class="chart-empty" data-empty="latency"></div></div>
+            </div>
+            <div class="stream" id="stream">
+                <div class="stream-bar">
+                    <h2 class="cell-title">Event stream</h2>
+                    <span class="stream-count" data-stream-count></span>
+                    <select class="select" data-stream-type aria-label="Event type">
+                        <option value="all">All events</option>
+                        <option value="request">Requests</option>
+                        <option value="response">Responses</option>
+                        <option value="error">Errors and timeouts</option>
+                        <option value="lifecycle">Connections and lifecycle</option>
+                    </select>
+                    <select class="select" data-stream-source aria-label="Source"></select>
+                    <button class="btn btn--sm" type="button" data-stream-pause aria-pressed="false">Pause scrolling</button>
+                    <button class="btn btn--ghost btn--sm" type="button" data-stream-clear>Clear</button>
                 </div>
+                <ol class="stream-list" data-stream-list aria-live="off"></ol>
+            </div>
+        </section>
+    </main>
 
-                <!-- Live Request Logs -->
-                <div
-                    class="bg-white dark:bg-gray-800 p-5 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col h-80">
-                    <h2 class="text-xl font-bold mb-4 dark:text-white">Live Request Stream</h2>
-                    <div class="flex-1 bg-gray-900 text-green-400 font-mono text-sm p-4 rounded overflow-y-auto space-y-1"
-                        id="log-console">
-                        <!-- Log messages injected here -->
-                        <div>> System Ready. Waiting for traffic...</div>
+    <!-- ============================ FLASH SALE ============================ -->
+    <main class="view-sale" id="view-sale" data-view="sale" hidden>
+        <div class="store-wrap">
+            <div class="store-frame">
+                <div class="frame-bar" aria-hidden="true">
+                    <span class="frame-dots"><i></i><i></i><i></i></span>
+                    <span class="frame-url">halden.example/flash-sale</span>
+                    <span>Storefront preview</span>
+                </div>
+                <div class="store" aria-label="Illustrative storefront">
+                    <div class="store-nav">
+                        <span class="store-logo">Halden</span>
+                        <div class="store-links"><span>New</span><span>Audio</span><span>Wearables</span><span>Cameras</span><span>Home</span><b>Flash sale</b></div>
+                        <div class="store-tools" aria-hidden="true">
+                            <svg class="icon"><use href="#i-search" /></svg><svg class="icon"><use href="#i-user" /></svg><svg class="icon"><use href="#i-bag" /></svg>
+                        </div>
                     </div>
+
+                    <div class="store-hero">
+                        <div>
+                            <span class="hero-kicker" id="hero-kicker">Flash sale</span>
+                            <h2>Our biggest prices drop for one short window.</h2>
+                            <p>Headphones, wearables and cameras at up to 40% off while the window is open. When it closes, prices go back.</p>
+                        </div>
+                        <div class="hero-side">
+                            <div>
+                                <div class="countdown" id="countdown"></div>
+                                <div class="cd-caption" id="countdown-caption"></div>
+                            </div>
+                            <div class="demand" aria-label="Observed demand">
+                                <div><b class="num" id="d-regions">0</b><span>regions shopping</span><div class="region-dots" id="d-region-dots"></div></div>
+                                <div><b class="num" id="d-requests">0</b><span>requests, last 10 s</span></div>
+                                <div><b class="num" id="d-latency">Not measured</b><span>response, last 60 s</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="store-grid-head">
+                        <h3>In the sale</h3>
+                        <span>Prices are illustrative</span>
+                    </div>
+                    <div class="products" id="products"></div>
+                    <div class="store-foot">This storefront is a demonstration. It has no catalogue, inventory or checkout behind it. The demand figures above are counted from the request generators on the right.</div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <script src="/static/app.js"></script>
+        <aside class="sale-panel" aria-label="Demand control">
+            <section class="panel-section">
+                <div class="sale-state">
+                    <div>
+                        <div class="sale-state-text" id="sale-state">Sale not running</div>
+                        <div class="sale-state-sub" id="sale-state-sub">Choose regions, then start the sale to begin sending traffic through the ESP32.</div>
+                    </div>
+                </div>
+                <div class="sale-actions">
+                    <button class="btn btn--primary" type="button" id="sale-start">Start flash sale</button>
+                    <button class="btn" type="button" id="sale-stop" disabled>Stop sale</button>
+                </div>
+                <div id="sale-notices"></div>
+            </section>
+
+            <section class="panel-section">
+                <div class="panel-head"><h2 class="panel-title">Traffic settings</h2><span class="panel-meta">Applies to generators started after a change</span></div>
+                <div class="config-grid">
+                    <label class="field"><span>ESP32 address</span><input class="input mono" id="cfg-ip" value="192.168.1.100" required></label>
+                    <label class="field"><span>Port</span><input class="input mono" id="cfg-port" type="number" value="80" required></label>
+                    <label class="field"><span>Pause between requests, s</span><input class="input" id="cfg-delay" type="number" step="0.1" min="0" value="1.0"></label>
+                    <label class="field"><span>Timeout, s</span><input class="input" id="cfg-timeout" type="number" step="0.1" min="0.1" value="2.0"></label>
+                    <label class="field wide"><span>Sale window shown on the storefront</span>
+                        <select class="select" id="cfg-window"><option value="5">5 minutes</option><option value="10" selected>10 minutes</option><option value="15">15 minutes</option><option value="30">30 minutes</option></select>
+                        <small>Display only. Generators keep running until you stop them.</small>
+                    </label>
+                </div>
+            </section>
+
+            <section class="panel-section">
+                <div class="panel-head">
+                    <h2 class="panel-title">Regional generators</h2>
+                    <button class="btn btn--ghost btn--sm btn--danger" type="button" id="stop-all">Stop all generators</button>
+                </div>
+                <ul class="gen-list" id="gen-list"></ul>
+                <div id="unassigned"></div>
+                <p class="gw-note">Each generator sends one request at a time, waits for the answer or the timeout, pauses, then sends the next. Flask allows at most 7 generators.</p>
+            </section>
+        </aside>
+    </main>
+
+    <script type="module" src="/static/app.js"></script>
 </body>
 
 </html>
