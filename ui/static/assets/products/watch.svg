@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><defs><radialGradient id="bg" cx="50%" cy="38%" r="75%"><stop offset="0" stop-color="#F4F5F7"/><stop offset="1" stop-color="#D9DDE3"/></radialGradient><radialGradient id="sh" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#1B2027" stop-opacity=".28"/><stop offset="1" stop-color="#1B2027" stop-opacity="0"/></radialGradient><linearGradient id="strap" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2A3038"/><stop offset=".5" stop-color="#3B434E"/><stop offset="1" stop-color="#2A3038"/></linearGradient><linearGradient id="case" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#D5DAE0"/><stop offset="1" stop-color="#8E97A3"/></linearGradient><linearGradient id="screen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#151A20"/><stop offset="1" stop-color="#05070A"/></linearGradient></defs>
+<rect width="400" height="400" fill="url(#bg)"/><ellipse cx="200" cy="338" rx="90" ry="12" fill="url(#sh)"/>
+<rect x="158" y="40" width="84" height="110" rx="14" fill="url(#strap)"/><rect x="158" y="250" width="84" height="100" rx="14" fill="url(#strap)"/>
+<g fill="#4A525E"><rect x="170" y="290" width="60" height="4" rx="2"/><rect x="170" y="304" width="60" height="4" rx="2"/></g>
+<rect x="132" y="120" width="136" height="160" rx="38" fill="url(#case)"/>
+<rect x="142" y="130" width="116" height="140" rx="30" fill="url(#screen)"/>
+<rect x="268" y="168" width="10" height="30" rx="4" fill="#A9B1BC"/>
+<text x="200" y="196" text-anchor="middle" font-family="Helvetica, Arial" font-size="34" font-weight="300" fill="#E8EDF2">10:09</text>
+<path d="M172 222 A30 30 0 0 1 228 222" fill="none" stroke="#35B98F" stroke-width="5" stroke-linecap="round"/>
+<path d="M180 234 A22 22 0 0 1 220 234" fill="none" stroke="#4C9AFF" stroke-width="5" stroke-linecap="round"/></svg>

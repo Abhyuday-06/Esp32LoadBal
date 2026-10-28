@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Three Failures, Three Balancers</title>
+    <title>Algorithm analysis · Flashpoint</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&display=swap">
+        href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
     <style>
         /* ------------------------------------------------------------------
            Tokens. The bare :root block is the complete light palette; the two
@@ -44,32 +44,32 @@
             --dist-ink-2: #ffffff;
             --dist-ink-3: #16202a;
 
-            --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
-            --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
-            --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+            --mono: "Geist Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+            --display: "Geist", "Inter", system-ui, sans-serif;
+            --body: "Geist", "Inter", "Segoe UI", system-ui, sans-serif;
         }
 
         @media (prefers-color-scheme: dark) {
             :root:not([data-theme="light"]) {
-                --ground: #0c1216;
-                --surface: #141c22;
-                --surface-2: #1a242b;
-                --surface-3: #212d35;
-                --rule: #26323b;
-                --rule-strong: #3b4a55;
-                --ink: #e8eef3;
-                --ink-2: #a4b2be;
-                --ink-3: #72828e;
+                --ground: #0B0F14;
+                --surface: #111820;
+                --surface-2: #17212B;
+                --surface-3: #1E2A36;
+                --rule: #263341;
+                --rule-strong: #33445A;
+                --ink: #E8EDF2;
+                --ink-2: #8B98A8;
+                --ink-3: #6B7888;
 
                 --s-rr: #3987e5;
                 --s-ql: #d95926;
                 --s-ema: #199e70;
 
-                --warn: #c9902f;
-                --crit: #e0616b;
+                --warn: #D9A441;
+                --crit: #E36D70;
                 --band: rgba(224, 97, 107, 0.10);
                 --band-line: rgba(224, 97, 107, 0.42);
-                --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 28px -16px rgba(0, 0, 0, .8);
+                --shadow: none;
 
                 --b1: #cfdce4;
                 --b2: #93a9b8;
@@ -81,25 +81,25 @@
         }
 
         :root[data-theme="dark"] {
-            --ground: #0c1216;
-            --surface: #141c22;
-            --surface-2: #1a242b;
-            --surface-3: #212d35;
-            --rule: #26323b;
-            --rule-strong: #3b4a55;
-            --ink: #e8eef3;
-            --ink-2: #a4b2be;
-            --ink-3: #72828e;
+            --ground: #0B0F14;
+            --surface: #111820;
+            --surface-2: #17212B;
+            --surface-3: #1E2A36;
+            --rule: #263341;
+            --rule-strong: #33445A;
+            --ink: #E8EDF2;
+            --ink-2: #8B98A8;
+            --ink-3: #6B7888;
 
             --s-rr: #3987e5;
             --s-ql: #d95926;
             --s-ema: #199e70;
 
-            --warn: #c9902f;
-            --crit: #e0616b;
+            --warn: #D9A441;
+            --crit: #E36D70;
             --band: rgba(224, 97, 107, 0.10);
             --band-line: rgba(224, 97, 107, 0.42);
-            --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 28px -16px rgba(0, 0, 0, .8);
+            --shadow: none;
 
             --b1: #cfdce4;
             --b2: #93a9b8;
@@ -150,8 +150,8 @@
         }
 
         h1 {
-            font-size: clamp(2.1rem, 5.2vw, 3.4rem);
-            font-weight: 800;
+            font-size: clamp(2rem, 4.6vw, 3rem);
+            font-weight: 650;
             line-height: 1.02;
             letter-spacing: -0.035em;
         }
@@ -172,11 +172,10 @@
         }
 
         .tag {
-            font-family: var(--mono);
-            font-size: .68rem;
+            font-family: var(--body);
+            font-size: .8rem;
             font-weight: 500;
-            letter-spacing: .14em;
-            text-transform: uppercase;
+            letter-spacing: 0;
             color: var(--ink-3);
         }
 
@@ -186,52 +185,41 @@
         }
 
         .num {
-            font-family: var(--mono);
             font-variant-numeric: tabular-nums;
         }
 
         /* --- masthead --- */
         .masthead {
-            border-bottom: 1px solid var(--rule);
-            background: var(--surface);
+            position: sticky; top: 0; z-index: 20; height: 52px;
+            display: flex; align-items: center; gap: 24px; padding: 0 20px;
+            background: var(--ground); border-bottom: 1px solid var(--rule);
         }
 
-        .masthead .wrap {
-            padding-block: 14px;
-            display: flex;
-            gap: 16px;
-            align-items: center;
-            justify-content: space-between;
-            flex-wrap: wrap;
+        .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
+        .brand b { font-weight: 650; font-size: 14px; letter-spacing: .02em; }
+        .brand span { font-size: 12px; color: var(--ink-3); border-left: 1px solid var(--rule); padding-left: 10px; }
+        .navtabs { display: flex; height: 100%; gap: 2px; }
+        .navtabs a {
+            display: inline-flex; align-items: center; height: 100%; padding: 0 12px; margin-bottom: -1px;
+            color: var(--ink-2); text-decoration: none; font-size: 13px; font-weight: 500; border-bottom: 2px solid transparent;
         }
-
-        .brand {
-            display: flex;
-            align-items: baseline;
-            gap: 10px;
-            font-family: var(--mono);
-            font-size: .78rem;
-            letter-spacing: .08em;
-        }
-
-        .brand b {
-            font-weight: 700;
-            letter-spacing: .02em;
-        }
-
-        .navlinks {
-            display: flex;
-            gap: 8px;
-            align-items: center;
+        .navtabs a:hover { color: var(--ink); }
+        .navtabs a[aria-current="page"] { color: var(--ink); border-bottom-color: #4C9AFF; }
+        .navlinks { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+        .sim-note { font-size: 12px; color: var(--ink-3); }
+        @media (max-width: 760px) {
+            .brand span, .sim-note { display: none; }
+            .masthead { gap: 10px; padding: 0 12px; overflow-x: auto; }
+            .navtabs a { padding: 0 8px; white-space: nowrap; }
         }
 
         .btn {
-            font-family: var(--mono);
-            font-size: .74rem;
-            letter-spacing: .06em;
-            text-transform: uppercase;
-            padding: 7px 13px;
-            border-radius: 3px;
+            font-family: var(--body);
+            font-size: .8rem;
+            font-weight: 500;
+            letter-spacing: 0;
+            padding: 6px 12px;
+            border-radius: 5px;
             border: 1px solid var(--rule-strong);
             background: var(--surface-2);
             color: var(--ink);
@@ -946,15 +934,21 @@
 
 <body>
     <header class="masthead">
-        <div class="wrap">
-            <div class="brand">
-                <b>ESP32 RL Load Balancer</b>
-                <span style="color:var(--ink-3)">/ scenario bench</span>
-            </div>
-            <div class="navlinks">
-                <a class="btn" href="/">Live dashboard</a>
-                <button class="btn" id="theme-toggle" type="button">Theme</button>
-            </div>
+        <a class="brand" href="/#live" aria-label="Flashpoint, live traffic">
+            <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
+                <rect x="0.5" y="0.5" width="21" height="21" rx="5" fill="#17212B" stroke="#263341" />
+                <path d="M5 11h4l2-5 2 10 2-5h2" fill="none" stroke="#4C9AFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <b>FLASHPOINT</b><span>Global Traffic Operations</span>
+        </a>
+        <nav class="navtabs" aria-label="Sections">
+            <a href="/#live">Live traffic</a>
+            <a href="/#sale">Flash sale</a>
+            <a href="/scenarios" aria-current="page">Algorithm analysis</a>
+        </nav>
+        <div class="navlinks">
+            <span class="sim-note">Simulated in your browser, not live hardware</span>
+            <button class="btn" id="theme-toggle" type="button">Theme</button>
         </div>
     </header>
 

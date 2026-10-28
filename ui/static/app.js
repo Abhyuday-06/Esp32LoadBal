@@ -1,450 +1,345 @@
-// app.js
+// app.js - FLASHPOINT bootstrap.
+//
+// Wires the views to telemetry.js (the single owner of Socket.IO and the
+// REST API): navigation, the metric strip, and the gateway / backend panel.
+// The map, charts, event stream and storefront live in their own modules.
 
-const socket = io();
+import { state, on, api, isDirect, recentRate, resetCounters, setOperatorStrategy } from './telemetry.js';
+import { TrafficMap } from './world-map.js';
+import { initCharts } from './charts.js';
+import { initEventStream } from './event-stream.js';
+import { initStorefront } from './storefront.js';
+import { regionInfo, serverColor, FIRMWARE_BACKEND_PORTS, ESP32_MAX_SESSIONS, CLIENT_TIMEOUT_S, STRATEGY_NAMES } from './region-config.js';
 
-// State
-let servers = [];
-let clients = [];
+const $ = id => document.getElementById(id);
+const fmt = n => Math.round(n).toLocaleString();
 
-// Chart Setup
-const ctx = document.getElementById('trafficChart').getContext('2d');
-const chartCfg = {
-    type: 'line',
-    data: {
-        labels: [],
-        datasets: []
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-            x: {
-                title: { display: true, text: 'Time' },
-                ticks: { display: false }
-            },
-            y: {
-                title: { display: true, text: 'Requests in Period' },
-                min: 0,
-                suggestedMax: 10,
-            }
-        },
-        animation: { duration: 0 }
-    }
-};
-const trafficChart = new Chart(ctx, chartCfg);
+/* ================================================================ *
+ *  Views
+ * ================================================================ */
 
-const ctxTotal = document.getElementById('totalPeriodChart').getContext('2d');
-const totalChartCfg = {
-    type: 'line',
-    data: {
-        labels: [],
-        datasets: [
-            {
-                label: 'Total Period Requests (All)',
-                data: [],
-                borderColor: '#6366F1',
-                tension: 0.2,
-                fill: true,
-                backgroundColor: 'rgba(99, 102, 241, 0.1)',
-            }
-        ]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-            x: {
-                title: { display: true, text: 'Time' },
-                ticks: { display: false }
-            },
-            y: {
-                title: { display: true, text: 'Requests in Period' },
-                min: 0,
-                suggestedMax: 10,
-            }
-        },
-        animation: { duration: 0 }
-    }
-};
-const totalPeriodChart = new Chart(ctxTotal, totalChartCfg);
+let map;
 
-const ctxAvg = document.getElementById('avgResponseTimeChart').getContext('2d');
-const avgChartCfg = {
-    type: 'line',
-    data: {
-        labels: [],
-        datasets: [{
-            label: 'Average Response Time (ms)',
-            data: [],
-            borderColor: '#F59E0B',
-            tension: 0.2,
-            fill: true,
-            backgroundColor: 'rgba(245, 158, 11, 0.1)',
-        }]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-            x: {
-                title: { display: true, text: 'Time' },
-                ticks: { display: false }
-            },
-            y: {
-                title: { display: true, text: 'Latency (ms)' },
-                min: 0,
-            }
-        },
-        animation: { duration: 0 }
-    }
-};
-const avgResponseTimeChart = new Chart(ctxAvg, avgChartCfg);
-
-// Socket IO Events
-socket.on('connect', () => {
-    const el = document.getElementById('socket-status');
-    el.textContent = 'Live';
-    el.className = 'px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium';
-    refreshState();
+function showView() {
+    const view = location.hash === '#sale' ? 'sale' : 'live';
+    document.querySelectorAll('[data-view]').forEach(v => { v.hidden = v.dataset.view !== view; });
+    document.querySelectorAll('[data-view-link]').forEach(a => {
+        if (a.dataset.viewLink === view) a.setAttribute('aria-current', 'page');
+        else a.removeAttribute('aria-current');
+    });
+    if (view === 'live' && map) requestAnimationFrame(() => map.relayout());
+}
+window.addEventListener('hashchange', showView);
+document.addEventListener('click', e => {
+    const go = e.target.closest('[data-goto]');
+    if (go) location.hash = go.dataset.goto;
 });
 
-socket.on('disconnect', () => {
-    const el = document.getElementById('socket-status');
-    el.textContent = 'Disconnected';
-    el.className = 'px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium';
-});
+/* ================================================================ *
+ *  Navigation status
+ * ================================================================ */
 
-// Traffic Tracking
-const currentRequestCounts = {}; // { port: count }
-const lastNonZeroCounts = {}; // { port: count }
-let totalRequestsReceived = 0;
-let periodTotalResponseTime = 0;
-let periodPongCount = 0;
-let UPDATE_INTERVAL_MS = parseInt(document.getElementById('chart-refresh')?.value) || 250;
-let chartInterval;
+function gatewayStatus() {
+    if (!state.clients.length) return { cls: '', text: 'Idle, no generators' };
+    if (state.clients.every(isDirect)) return { cls: 'is-warn', text: 'Not in path' };
+    if (state.lastForwardAt) {
+        const ago = (Date.now() - state.lastForwardAt) / 1000;
+        if (ago <= 10) return { cls: 'is-ok', text: 'Forwarding observed' };
+        return { cls: '', text: `Last forward ${ago < 120 ? `${Math.round(ago)} s` : `${Math.round(ago / 60)} min`} ago` };
+    }
+    return { cls: '', text: 'Unverified' };
+}
 
-function startChartInterval() {
-    if (chartInterval) clearInterval(chartInterval);
-    chartInterval = setInterval(() => {
-        // Tick the chart every UPDATE_INTERVAL_MS
-        const now = new Date().toLocaleTimeString();
-        trafficChart.data.labels.push(now);
-        totalPeriodChart.data.labels.push(now);
-        avgResponseTimeChart.data.labels.push(now);
+function renderNav() {
+    const s = $('nav-socket');
+    s.className = `status ${state.socketConnected ? 'is-ok' : 'is-crit'}`;
+    s.innerHTML = `<span class="status-label">Dashboard </span>${state.socketConnected ? 'connected' : 'disconnected'}`;
+    const g = gatewayStatus();
+    const e = $('nav-esp32');
+    e.className = `status ${g.cls}`;
+    e.innerHTML = `<span class="status-label">ESP32 </span>${g.text.charAt(0).toLowerCase() + g.text.slice(1)}`;
+}
 
-        let periodTotal = 0;
-        servers.forEach(srv => {
-            let dataset = trafficChart.data.datasets.find(d => d.label === `Server ${srv.port}`);
-            if (!dataset) {
-                const CHART_COLORS = [
-                    '#e6194B', // Red
-                    '#3cb44b', // Green
-                    '#4363d8', // Blue
-                    '#f58231', // Orange
-                    '#911eb4'  // Purple
-                ];
-                const colorIndex = trafficChart.data.datasets.length % CHART_COLORS.length;
-                dataset = {
-                    label: `Server ${srv.port}`,
-                    data: [],
-                    borderColor: CHART_COLORS[colorIndex],
-                    tension: 0.2, // Smooth lines
-                    fill: false
-                };
-                trafficChart.data.datasets.push(dataset);
-            }
-            const count = currentRequestCounts[srv.port] || 0;
-            periodTotal += count;
-            
-            if (count > 0) {
-                lastNonZeroCounts[srv.port] = count;
-            }
+/* ================================================================ *
+ *  Metrics strip
+ * ================================================================ */
 
-            // Push the requests received in this period
-            dataset.data.push(count);
+const generatorHistory = [];
 
-            // Reset counter
-            currentRequestCounts[srv.port] = 0;
-        });
+function drawSpark(canvas, values, color) {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (!w || !h) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (canvas.width !== Math.round(w * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
+    const g = canvas.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    const vals = values.map(v => (v == null ? null : v));
+    const max = Math.max(1, ...vals.filter(v => v != null));
+    g.strokeStyle = color;
+    g.lineWidth = 1.25;
+    g.lineJoin = 'round';
+    g.beginPath();
+    let started = false;
+    vals.forEach((v, i) => {
+        if (v == null) { started = false; return; }
+        const x = (i / Math.max(1, vals.length - 1)) * (w - 2) + 1;
+        const y = h - 2 - (v / max) * (h - 4);
+        if (started) g.lineTo(x, y); else { g.moveTo(x, y); started = true; }
+    });
+    g.stroke();
+}
 
-        // Update fixed datasets
-        const periodTotalDataset = totalPeriodChart.data.datasets.find(d => d.label === 'Total Period Requests (All)');
-        if (periodTotalDataset) periodTotalDataset.data.push(periodTotal);
+function setMetric(key, value, sub, spark, color = '#8B98A8', empty = false) {
+    const m = document.querySelector(`[data-metric="${key}"]`);
+    m.querySelector('[data-value]').innerHTML = value;
+    if (sub != null) m.querySelector('[data-sub]').textContent = sub;
+    m.classList.toggle('is-empty', empty);
+    drawSpark(m.querySelector('[data-spark]'), spark, color);
+}
 
-        const avgDataset = avgResponseTimeChart.data.datasets[0];
-        const avgResp = periodPongCount > 0 ? (periodTotalResponseTime / periodPongCount) : 0;
-        
-        if (periodPongCount > 0) {
-            avgDataset.data.push(avgResp);
+function renderMetrics() {
+    const T = state.totals;
+    const b60 = state.buckets.slice(-60);
+
+    setMetric('sent', fmt(T.sent), state.totals.forwarded ? `${fmt(T.forwarded)} received by backends` : 'By generators, this session', b60.map(b => b.sent));
+
+    const rolling = b60.map((_, i) => {
+        const win = b60.slice(Math.max(0, i - 9), i + 1);
+        return win.reduce((a, b) => a + b.sent, 0) / 10;
+    });
+    const rate = recentRate(10);
+    setMetric('rate', `${rate.toFixed(1)}<small>req/s</small>`, null, rolling);
+
+    let ls = 0, ln = 0;
+    for (const b of b60) { ls += b.latSum; ln += b.latN; }
+    setMetric('latency', ln ? `${fmt(ls / ln)}<small>ms</small>` : 'Not measured', null, b60.map(b => (b.latN ? b.latSum / b.latN : null)), '#E8EDF2', !ln);
+
+    const completed = T.ok + T.non200 + T.timeouts + T.errors;
+    setMetric('ok', fmt(T.ok), completed ? `${((T.ok / completed) * 100).toFixed(1)}% of completed requests` : 'Awaiting traffic', b60.map(b => b.ok), '#35B98F');
+
+    const failed = T.non200 + T.timeouts + T.errors;
+    const parts = [];
+    if (T.timeouts) parts.push(`${fmt(T.timeouts)} timeouts`);
+    if (T.non200) parts.push(`${fmt(T.non200)} non-200`);
+    if (T.errors) parts.push(`${fmt(T.errors)} errors`);
+    setMetric('failed', fmt(failed), parts.length ? parts.join(', ') : 'Timeouts, errors and non-200 responses', b60.map(b => b.failed), failed ? '#E36D70' : '#8B98A8');
+
+    setMetric('generators', `${state.clients.length}<small>of 7</small>`, state.loaded ? (state.clients.length ? `${state.clients.filter(c => state.regionOf[c.id]).length} mapped to a region` : 'Start them on Flash sale') : 'Loading', generatorHistory);
+}
+
+/* ================================================================ *
+ *  Gateway + backends panel
+ * ================================================================ */
+
+function renderGateway() {
+    const g = gatewayStatus();
+    const el = $('gw-status');
+    el.className = `status ${g.cls}`;
+    el.textContent = g.text;
+
+    const targets = [...new Set(state.clients.map(c => `${c.target_ip}:${c.target_port}`))];
+    $('gw-target').innerHTML = targets.length
+        ? targets.map(t => `<span class="mono">${t}</span>`).join('<br>') + (state.clients.every(isDirect) ? '<br><span class="muted">That is a backend port, so requests skip the ESP32.</span>' : '')
+        : '<span class="muted">No generators running</span>';
+
+    const open = Math.min(ESP32_MAX_SESSIONS, state.openSessions.size);
+    const slots = $('gw-slots');
+    slots.classList.toggle('is-full', open >= ESP32_MAX_SESSIONS);
+    slots.innerHTML = Array.from({ length: ESP32_MAX_SESSIONS }, (_, i) => `<span class="${i < open ? 'on' : ''}"></span>`).join('');
+    $('gw-slots-text').textContent = `${open} of 7 open from this dashboard`;
+
+    const sel = $('gw-strategy');
+    if (sel.value !== state.operatorStrategy) sel.value = state.operatorStrategy;
+}
+
+let backendKey = '';
+
+function backendStructureKey() {
+    return state.servers.map(s => `${s.port}:${s.running}:${s.latency}`).join('|');
+}
+
+function renderBackends() {
+    const box = $('backends');
+    const key = backendStructureKey();
+    if (key !== backendKey) {
+        backendKey = key;
+        if (!state.servers.length) {
+            box.innerHTML = `<p class="empty-line">${state.loaded ? 'No backends yet. Add one below for each port the ESP32 forwards to.' : 'Loading backends'}</p>`;
         } else {
-            avgDataset.data.push(avgDataset.data.length > 0 ? avgDataset.data[avgDataset.data.length - 1] : 0);
+            box.innerHTML = state.servers.map(s => {
+                const addedMs = Math.round((s.latency / 100) * CLIENT_TIMEOUT_S * 1000);
+                const offFirmware = !FIRMWARE_BACKEND_PORTS.includes(s.port);
+                return `
+                <div class="be ${s.running ? '' : 'is-stopped'}" data-backend-row="${s.port}" style="--c:${serverColor(s.port)}">
+                    <span class="be-anchor" data-anchor="backend" data-port="${s.port}"></span>
+                    <div class="be-top">
+                        <span class="be-port">:${s.port}</span>
+                        <span class="be-ip">${s.ip}</span>
+                        <span class="status ${s.running ? 'is-ok' : ''}">${s.running ? 'Running' : 'Stopped'}</span>
+                        <span class="be-actions">
+                            ${s.running
+                                ? `<button class="btn btn--sm" type="button" data-be="stop" data-port="${s.port}" title="Stop server :${s.port}"><svg class="icon"><use href="#i-power"/></svg>Stop</button>`
+                                : `<button class="btn btn--sm" type="button" data-be="start" data-port="${s.port}" title="Start server :${s.port}"><svg class="icon"><use href="#i-power"/></svg>Start</button>`}
+                            <button class="btn btn--sm btn--icon btn--danger" type="button" data-be="delete" data-port="${s.port}" aria-label="Remove server :${s.port}" title="Remove server"><svg class="icon"><use href="#i-trash"/></svg></button>
+                        </span>
+                    </div>
+                    <div class="be-share"><div class="bar"><i data-be-bar></i></div><span class="num" data-be-count>0 req</span></div>
+                    <div class="be-meta">
+                        <label class="lat-ctl"><span class="lbl">Configured</span>
+                            <input class="input num" type="number" min="0" max="100" value="${s.latency}" data-be-latency="${s.port}" aria-label="Added latency for :${s.port}, percent of timeout">
+                            <span class="val">% <span class="lbl-inline">+${addedMs} ms</span></span>
+                        </label>
+                        <div class="measured"><span class="lbl">Measured</span><span class="val" data-be-measured>Not measured</span></div>
+                    </div>
+                    ${offFirmware ? '<div class="be-warn">The firmware does not forward to this port. It only receives direct traffic.</div>' : ''}
+                </div>`;
+            }).join('');
         }
-        
-        periodTotalResponseTime = 0;
-        periodPongCount = 0;
+        suggestPort();
+        if (map) requestAnimationFrame(() => map.relayout());
+    }
 
-        // Keep last 60 ticks
-        if (trafficChart.data.labels.length > 60) {
-            trafficChart.data.labels.shift();
-            trafficChart.data.datasets.forEach(d => d.data.shift());
-            
-            totalPeriodChart.data.labels.shift();
-            totalPeriodChart.data.datasets.forEach(d => d.data.shift());
-
-            avgResponseTimeChart.data.labels.shift();
-            avgDataset.data.shift();
-        }
-        
-        trafficChart.update();
-        totalPeriodChart.update();
-        avgResponseTimeChart.update();
-        
-        // Update live stats HTML
-        const statTotalParams = document.getElementById('stat-total-reqs');
-        if (statTotalParams) {
-            statTotalParams.innerText = totalRequestsReceived;
-        }
-        
-    }, UPDATE_INTERVAL_MS);
+    // Live numbers, updated in place so inputs keep focus
+    const total = state.servers.reduce((a, s) => a + (state.backends[s.port]?.forwarded || 0), 0);
+    $('be-total').textContent = `${fmt(state.totals.forwarded)} requests received`;
+    for (const s of state.servers) {
+        const row = box.querySelector(`[data-backend-row="${s.port}"]`);
+        if (!row) continue;
+        const B = state.backends[s.port] || {};
+        const n = B.forwarded || 0;
+        const pct = total ? (n / total) * 100 : 0;
+        row.querySelector('[data-be-bar]').style.width = `${pct}%`;
+        row.querySelector('[data-be-count]').textContent = `${fmt(n)} req${total ? `, ${pct.toFixed(0)}%` : ''}`;
+        row.querySelector('[data-be-measured]').textContent = B.latN ? `${fmt(B.latSum / B.latN)} ms avg` : 'Not measured';
+    }
 }
-startChartInterval();
 
-window.addEventListener('DOMContentLoaded', () => {
-    const refreshInput = document.getElementById('chart-refresh');
-    if (refreshInput) {
-        refreshInput.addEventListener('change', (e) => {
-            const val = parseInt(e.target.value);
-            if (val && val >= 100) {
-                UPDATE_INTERVAL_MS = val;
-                startChartInterval();
+function suggestPort() {
+    const input = $('new-port');
+    if (document.activeElement === input) return;
+    const used = new Set(state.servers.map(s => s.port));
+    const next = FIRMWARE_BACKEND_PORTS.find(p => !used.has(p));
+    input.placeholder = next ? String(next) : '8085';
+    if (!input.value || used.has(Number(input.value))) input.value = next || '';
+}
+
+function bindBackendControls() {
+    const box = $('backends');
+    const armed = new Map();
+
+    box.addEventListener('click', async e => {
+        const btn = e.target.closest('button[data-be]');
+        if (!btn) return;
+        const port = Number(btn.dataset.port);
+        const act = btn.dataset.be;
+        if (act === 'delete') {
+            if (!armed.has(port)) {
+                btn.classList.add('btn--confirm');
+                btn.classList.remove('btn--icon');
+                btn.textContent = 'Remove?';
+                armed.set(port, setTimeout(() => { armed.delete(port); backendKey = ''; renderBackends(); }, 3000));
+                return;
             }
-        });
-    }
-});
-
-
-// Server Events
-socket.on('server_event', (data) => {
-    // Ex: {server_port, action: 'REQUEST', details, timestamp}
-    appendLog(`[SERVER:${data.server_port}] ${data.action} - ${data.details}`, data.action === 'ERROR' ? 'text-red-400' : 'text-blue-300');
-    
-    if (data.action === 'REQUEST') {
-        currentRequestCounts[data.server_port] = (currentRequestCounts[data.server_port] || 0) + 1;
-        totalRequestsReceived++;
-        const el = document.getElementById('stat-total-reqs');
-        if (el) el.innerText = totalRequestsReceived;
-    }
-    
-    if (['START', 'STOP', 'LATENCY_UPDATE'].includes(data.action)) {
-        refreshState();
-    }
-});
-
-// Client Events
-socket.on('client_event', (data) => {
-    appendLog(`[CLIENT:${data.client_id}] ${data.action} - ${data.details}`, data.action === 'ERROR' ? 'text-red-400' : 'text-purple-300');
-    
-    if (data.action === 'PONG' && data.response_time !== undefined) {
-        periodTotalResponseTime += data.response_time;
-        periodPongCount += 1;
-    }
-
-    if (['STOP', 'ERROR', 'PONG', 'TIMEOUT'].includes(data.action)) {
-        // Refresh periodically on structure changes
-        let requireRefresh = ['STOP', 'ERROR'].includes(data.action);
-        if(requireRefresh) refreshState();
-    }
-});
-
-function appendLog(msg, colorClass='text-green-400') {
-    const consoleEl = document.getElementById('log-console');
-    const timeStr = new Date().toISOString().split('T')[1].split('.')[0];
-    const div = document.createElement('div');
-    div.className = `whitespace-pre-wrap ${colorClass}`;
-    div.innerText = `[${timeStr}] ${msg}`;
-    consoleEl.appendChild(div);
-    consoleEl.scrollTop = consoleEl.scrollHeight;
-    
-    // Limits
-    if (consoleEl.childElementCount > 100) {
-        consoleEl.removeChild(consoleEl.firstChild);
-    }
-}
-
-
-// UI API calls
-async function fetchApi(url, options = {}) {
-    const r = await fetch(url, {
-        ...options,
-        headers: { 'Content-Type': 'application/json' }
-    });
-    if(!r.ok) {
-        const body = await r.json().catch(()=>({}));
-        appendLog(`[API ERROR] ${body.error || r.statusText}`, 'text-red-500');
-    }
-    return r.json();
-}
-
-async function refreshState() {
-    servers = await fetchApi('/api/servers');
-    clients = await fetchApi('/api/clients');
-    renderServers();
-    renderClients();
-}
-
-function renderServers() {
-    const container = document.getElementById('server-list');
-    container.innerHTML = '';
-    
-    // Sort logic
-    servers.sort((a,b) => a.port - b.port).forEach(s => {
-        const d = document.createElement('div');
-        d.className = 'border border-gray-200 dark:border-gray-700 rounded p-3 flex justify-between items-center text-sm bg-white dark:bg-gray-800';
-        
-        let statusTag = s.running 
-            ? '<span class="text-green-600 dark:text-green-500 font-bold">Running</span>' 
-            : '<span class="text-gray-500 dark:text-gray-400 font-bold">Stopped</span>';
-
-        d.innerHTML = `
-            <div>
-                <strong class="dark:text-white">Port ${s.port}</strong> <span class="text-gray-500 dark:text-gray-400 text-xs">(${s.ip})</span>
-                <div class="mt-1">${statusTag}</div>
-            </div>
-            <div class="flex gap-2 flex-col items-end">
-                <div class="flex items-center gap-2">
-                    <label class="text-xs text-gray-500 dark:text-gray-400">Latency %</label>
-                    <input type="number" min="0" max="100" value="${s.latency}" onchange="updateLatency(${s.port}, this.value)" class="w-16 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-1 py-1 text-xs text-right">
-                </div>
-                <div class="flex gap-1 justify-end mt-1">
-                    ${!s.running ? `<button onclick="cmdServer(${s.port}, 'start')" class="bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200 px-2 py-1 hover:bg-green-200 dark:hover:bg-green-800 rounded">Start</button>` : ''}
-                    ${s.running ? `<button onclick="cmdServer(${s.port}, 'stop')" class="bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200 px-2 py-1 hover:bg-red-200 dark:hover:bg-red-800 rounded">Stop</button>` : ''}
-                </div>
-                <button onclick="cmdServer(${s.port}, 'delete', 'DELETE')" class="text-xs text-red-500 hover:underline text-right mt-1">Remove</button>
-            </div>
-        `;
-        container.appendChild(d);
-    });
-}
-
-function renderClients() {
-    const container = document.getElementById('client-list');
-    container.innerHTML = '';
-    
-    clients.forEach(c => {
-        const d = document.createElement('div');
-        d.className = 'border border-gray-200 dark:border-gray-700 rounded p-3 flex justify-between items-center text-sm bg-white dark:bg-gray-800';
-        d.innerHTML = `
-            <div>
-                <strong class="dark:text-white">${c.id}</strong> <span class="text-xs text-gray-500 dark:text-gray-400">Delay: ${c.delay}s, Timeout: ${c.timeout}s</span>
-                <div class="mt-1 text-gray-600 dark:text-gray-400 font-mono text-xs">Target: ${c.target_ip}:${c.target_port}</div>
-                <div class="text-xs text-blue-500 font-mono mt-1">Live ID: ${c.current_client_id || 'N/A'}</div>
-            </div>
-            <div>
-                 <button onclick="cmdClient('${c.id}', 'stop')" class="bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200 px-2 py-1 hover:bg-red-200 dark:hover:bg-red-800 rounded">Terminate</button>
-            </div>
-        `;
-        container.appendChild(d);
-    });
-}
-
-// Actions
-window.cmdServer = async (port, action, method='POST') => {
-    await fetchApi(`/api/servers/${port}/${action}`, { method });
-    setTimeout(refreshState, 200); // give backend a slice to finish
-};
-
-window.updateLatency = async (port, latencyValue) => {
-    await fetchApi(`/api/servers/${port}/latency`, {
-        method: 'POST',
-        body: JSON.stringify({ latency: latencyValue })
-    });
-    setTimeout(refreshState, 200);
-};
-
-window.cmdClient = async (id, action, method='POST') => {
-    await fetchApi(`/api/clients/${id}/${action}`, { method });
-    setTimeout(refreshState, 200);
-};
-
-window.cmdKillAllClients = async () => {
-    await fetchApi(`/api/clients/stop_all`, { method: 'POST' });
-    setTimeout(refreshState, 200);
-};
-
-// Forms
-document.getElementById('form-create-server').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const port = document.getElementById('srv-port').value;
-    const latency = document.getElementById('srv-latency').value;
-    await fetchApi('/api/servers/create', {
-        method: 'POST',
-        body: JSON.stringify({ port, latency })
-    });
-    document.getElementById('srv-port').value = '';
-    refreshState();
-});
-
-document.getElementById('form-create-client').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const target_ip = document.getElementById('cli-ip').value;
-    const target_port = document.getElementById('cli-port').value;
-    const delay = document.getElementById('cli-delay').value;
-    const timeout = document.getElementById('cli-timeout').value;
-    
-    await fetchApi('/api/clients/create', {
-        method: 'POST',
-        body: JSON.stringify({ target_ip, target_port, delay, timeout })
-    });
-    refreshState();
-});
-
-// Dark mode toggle logic
-const themeToggleBtn = document.getElementById('theme-toggle');
-const themeToggleDarkIcon = document.getElementById('theme-toggle-dark-icon');
-const themeToggleLightIcon = document.getElementById('theme-toggle-light-icon');
-
-function updateThemeIcons() {
-    if (document.documentElement.classList.contains('dark')) {
-        themeToggleLightIcon.classList.remove('hidden');
-        themeToggleDarkIcon.classList.add('hidden');
-    } else {
-        themeToggleLightIcon.classList.add('hidden');
-        themeToggleDarkIcon.classList.remove('hidden');
-    }
-}
-
-// Initial theme setup
-if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-    document.documentElement.classList.add('dark');
-} else {
-    document.documentElement.classList.remove('dark');
-}
-if(themeToggleBtn) {
-    updateThemeIcons();
-    themeToggleBtn.addEventListener('click', function() {
-        if (localStorage.getItem('color-theme')) {
-            if (localStorage.getItem('color-theme') === 'light') {
-                document.documentElement.classList.add('dark');
-                localStorage.setItem('color-theme', 'dark');
-            } else {
-                document.documentElement.classList.remove('dark');
-                localStorage.setItem('color-theme', 'light');
-            }
-        } else {
-            if (document.documentElement.classList.contains('dark')) {
-                document.documentElement.classList.remove('dark');
-                localStorage.setItem('color-theme', 'light');
-            } else {
-                document.documentElement.classList.add('dark');
-                localStorage.setItem('color-theme', 'dark');
-            }
+            clearTimeout(armed.get(port));
+            armed.delete(port);
         }
-        updateThemeIcons();
+        btn.disabled = true;
+        if (act === 'start') await api.startServer(port);
+        else if (act === 'stop') await api.stopServer(port);
+        else if (act === 'delete') await api.deleteServer(port);
     });
+
+    box.addEventListener('change', e => {
+        const input = e.target.closest('[data-be-latency]');
+        if (!input) return;
+        const v = Math.max(0, Math.min(100, Number(input.value) || 0));
+        api.setLatency(Number(input.dataset.beLatency), v);
+    });
+
+    box.addEventListener('mouseover', e => {
+        const row = e.target.closest('[data-backend-row]');
+        map?.setHighlightPort(row ? Number(row.dataset.backendRow) : null);
+    });
+    box.addEventListener('mouseleave', () => map?.setHighlightPort(null));
+
+    $('add-backend').addEventListener('submit', async e => {
+        e.preventDefault();
+        const port = Number($('new-port').value);
+        const latency = Number($('new-latency').value) || 0;
+        const r = await api.createServer(port, latency);
+        if (r.ok) $('new-port').value = '';
+        suggestPort();
+    });
+
+    $('gw-strategy').addEventListener('change', e => setOperatorStrategy(e.target.value));
 }
 
-// Start periodic sync roughly every 1.5s to catch new client IDs smoothly
-setInterval(refreshState, 1500);
+/* ================================================================ *
+ *  Map toolbar
+ * ================================================================ */
 
-// Initial fetch
-refreshState();
+function bindMapToolbar() {
+    const btn = $('toggle-anim');
+    const sync = () => {
+        btn.setAttribute('aria-pressed', String(map.paused));
+        btn.querySelector('span').textContent = map.paused ? 'Resume animations' : 'Pause animations';
+        btn.querySelector('use').setAttribute('href', map.paused ? '#i-play' : '#i-pause');
+    };
+    btn.addEventListener('click', () => { map.setPaused(!map.paused); sync(); });
+    sync();
+
+    $('stage').addEventListener('focuschange', e => {
+        const chip = $('focus-chip');
+        chip.hidden = !e.detail;
+        if (e.detail) $('focus-name').textContent = `Showing ${regionInfo(e.detail).name}`;
+    });
+    $('focus-clear').addEventListener('click', () => map.focus && map.setFocus(map.focus));
+    $('routing').addEventListener('scroll', () => map.relayout(), { passive: true });
+}
+
+/* ================================================================ *
+ *  Boot
+ * ================================================================ */
+
+map = new TrafficMap($('stage'));
+map.load('/static/vendor/countries-110m.json');
+initCharts();
+initEventStream($('stream'));
+initStorefront();
+bindBackendControls();
+bindMapToolbar();
+
+$('reset-counters').addEventListener('click', () => resetCounters());
+
+function renderAll() {
+    renderNav();
+    renderMetrics();
+    renderGateway();
+    renderBackends();
+}
+
+on('state', renderAll);
+on('connection', renderAll);
+on('tick', () => {
+    generatorHistory.push(state.clients.length);
+    if (generatorHistory.length > 60) generatorHistory.shift();
+    renderAll();
+});
+
+// Keep counters responsive between ticks without re-rendering on every event
+let dirty = false;
+['request:sent', 'request:forwarded', 'request:done'].forEach(evt => on(evt, () => { dirty = true; }));
+setInterval(() => {
+    if (!dirty) return;
+    dirty = false;
+    renderMetrics();
+    renderBackends();
+    renderGateway();
+}, 250);
+
+showView();
+renderAll();
+
+// Exposed for operators poking at the console during a demo
+window.flashpoint = { state, api, strategyNames: STRATEGY_NAMES };
